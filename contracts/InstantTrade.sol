@@ -30,28 +30,34 @@ contract ZeroExchange {
     */
 }
 
-contract WETH {
+contract WETH is Token {
   function deposit() public payable {}
   function withdraw(uint wad) public {}
-  function balanceOf(address _owner) public constant returns (uint256 balance) {}
-  function approve(address _spender, uint256 _value) public returns (bool success) {}
-  function transfer(address _to, uint256 _value) public returns (bool success) {}
-  function transferFrom(address _from, address _to, uint256 _value) public returns (bool success) {}
+}
+
+contract Bancor {
+   //function quickConvert(address[], uint256, uint256) public payable returns (uint256) {}
+   //function quickConvertPrioritized(address[] _path, uint256, uint256, uint256, uint8, bytes32, bytes32) public payable returns (uint256) {}
+   function convertForPrioritized2(address[] _path, uint256, uint256, address, uint256, uint8, bytes32, bytes32) public payable returns (uint256) {}
 }
 
 contract InstantTrade is SafeMath, Ownable {
 
   address public wETH;
+  address public etherToken;
   address public zeroX;
   address public proxyZeroX;
+  address public bancorNetwork;
     
   mapping(address => bool) allowedFallbacks; // Limit fallback to avoid accidental ETH transfers
     
-  constructor(address _weth, address _zeroX) Ownable() public {
+  constructor(address _weth, address _zeroX, address _bancorNet, address _bancorEther) Ownable() public {
     wETH = _weth;
     zeroX = _zeroX;
     proxyZeroX = ZeroExchange(zeroX).TOKEN_TRANSFER_PROXY_CONTRACT();
-       
+    etherToken = _bancorEther;
+    bancorNetwork = _bancorNet;
+    
     allowedFallbacks[wETH] = true;
   }
    
@@ -184,6 +190,39 @@ contract InstantTrade is SafeMath, Ownable {
       require(Token(_orderAddresses[2]).transfer(msg.sender, customerValue));
     }  
   } 
+  
+    //approve tokens to bancorNetwork instead of to this
+  function instantTradeBancor(uint _sourceAmount, address[] _path, uint256 _minReturn) external payable {
+    
+    // Fix max fee (0.4%) and always reserve it
+    uint totalValue = safeMul(_sourceAmount, 1004) / 1000;
+    uint customerValue;
+    
+    // Paying with Ethereum or token? 
+    if (_path[0] == etherToken) {
+    
+      // Check amount of ether sent to make sure it's correct
+      require(msg.value == totalValue);
+     
+     //Trade and let Bancor immediately transfer the resulting value to the sender
+      customerValue = Bancor(bancorNetwork).convertForPrioritized2.value(_sourceAmount)(_path, _sourceAmount, _minReturn, msg.sender, 0x0, 0x0, 0x0, 0x0);
+      require(customerValue >= _minReturn);
+      
+    } else {
+    
+      // Make sure not to accept ETH when selling tokens
+      require(msg.value == 0);
+           
+      // transfer amount directly to bancor network
+      require(Token(_path[0]).transferFrom(msg.sender, bancorNetwork, _sourceAmount));
+      
+      //Trade and let Bancor immediately transfer the resulting value to the sender
+       customerValue = Bancor(bancorNetwork).convertForPrioritized2(_path, _sourceAmount, _minReturn, msg.sender, 0x0, 0x0, 0x0, 0x0);
+       require(customerValue >= _minReturn);
+    }
+  }
+  
+  
   
   // Withdraw funds earned from fees
   function withdrawFees(address _token) external onlyOwner {

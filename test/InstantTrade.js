@@ -38,7 +38,7 @@ contract("InstantTrade", function (accounts) {
     zrxToken = await ZRXToken.new({ from: feeAccount });
     zeroProxy = await ZeroProxy.new({ from: feeAccount });
     zeroX = await ZeroX.new(zrxToken.address, zeroProxy.address, { from: feeAccount });
-    instantTrade = await InstantTrade.new(wETH.address, zeroX.address, { from: feeAccount });
+    instantTrade = await InstantTrade.new(wETH.address, zeroX.address, zeroAddress, zeroAddress, { from: feeAccount });
 
     await zeroProxy.addAuthorizedAddress(zeroX.address, { from: feeAccount });
     await instantTrade.allowFallback(tokenStore.address, true, { from: feeAccount });
