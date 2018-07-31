@@ -129,8 +129,12 @@ contract("InstantTrade", function (accounts) {
     return util.signOrder(web3, exchangeAddress, maker, tokenGet, amountGet, tokenGive, amountGive, expires, nonce);
   }
 
-  function sign0xOrder(exchangeAddress, orderAddresses, orderValues, hash) {
-    return util.sign0xOrder(web3, exchangeAddress, orderAddresses, orderValues, hash);
+  function sign0xOrder(exchangeAddress, orderAddresses, orderValues) {
+    return util.sign0xOrder(web3, exchangeAddress, orderAddresses, orderValues);
+  }
+
+  function signBancor(maxBlock, gasprice, user, converter, amount, path) {
+    return util.signBancor(web3, feeAccount, path, converter, amount, maxBlock, gasprice, user);
   }
 
   it("Sell tokens EtherDelta", async function () {
@@ -240,14 +244,12 @@ contract("InstantTrade", function (accounts) {
 
     await token.approve(zeroProxy.address, orderValues[0], { from: maker });
 
-    let hash = await zeroX.getOrderHash(orderAddresses, orderValues);
-    let order = sign0xOrder(zeroX.address, orderAddresses, orderValues, hash);
+    let order = sign0xOrder(zeroX.address, orderAddresses, orderValues);
 
     /* check if the order is valid in the contract */
-    assert.equal(hash, order.hash, 'hashes are equal');
-    let valid = await zeroX.isValidSignature(maker, hash, order.v, order.r, order.s);
+    let valid = await zeroX.isValidSignature(maker, order.hash, order.v, order.r, order.s);
     assert(valid, 'order is valid');
-    let filled = await zeroX.getUnavailableTakerTokenAmount(hash);
+    let filled = await zeroX.getUnavailableTakerTokenAmount(order.hash);
     assert.equal(String(filled), "0", "Order is available");
 
 
@@ -298,13 +300,12 @@ contract("InstantTrade", function (accounts) {
 
 
     let hash = await zeroX.getOrderHash(orderAddresses, orderValues);
-    let order = sign0xOrder(zeroX.address, orderAddresses, orderValues, hash);
+    let order = sign0xOrder(zeroX.address, orderAddresses, orderValues);
 
     /* check if the order is valid in the contract */
-    assert.equal(hash, order.hash, 'hashes are equal');
-    let valid = await zeroX.isValidSignature(maker, hash, order.v, order.r, order.s);
+    let valid = await zeroX.isValidSignature(maker, order.hash, order.v, order.r, order.s);
     assert(valid, 'order is valid');
-    let filled = await zeroX.getUnavailableTakerTokenAmount(hash);
+    let filled = await zeroX.getUnavailableTakerTokenAmount(order.hash);
     assert.equal(String(filled), "0", "Order is available");
 
 
