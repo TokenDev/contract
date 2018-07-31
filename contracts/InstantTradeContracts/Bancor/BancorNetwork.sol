@@ -1,300 +1,16 @@
-pragma solidity ^0.4.21;
-
-/*
-    Owned contract interface
-*/
-contract IOwned {
-    // this function isn't abstract since the compiler emits automatically generated getter functions as external
-    function owner() public view returns (address) {}
-
-    function transferOwnership(address _newOwner) public;
-    function acceptOwnership() public;
-}
-
-/*
-    ERC20 Standard Token interface
-*/
-contract IERC20Token {
-    // these functions aren't abstract since the compiler emits automatically generated getter functions as external
-    function name() public view returns (string) {}
-    function symbol() public view returns (string) {}
-    function decimals() public view returns (uint8) {}
-    function totalSupply() public view returns (uint256) {}
-    function balanceOf(address _owner) public view returns (uint256) { _owner; }
-    function allowance(address _owner, address _spender) public view returns (uint256) { _owner; _spender; }
-
-    function transfer(address _to, uint256 _value) public returns (bool success);
-    function transferFrom(address _from, address _to, uint256 _value) public returns (bool success);
-    function approve(address _spender, uint256 _value) public returns (bool success);
-}
-
-/*
-    Contract Registry interface
-*/
-contract IContractRegistry {
-    function getAddress(bytes32 _contractName) public view returns (address);
-}
-
-/*
-    Contract Features interface
-*/
-contract IContractFeatures {
-    function isSupported(address _contract, uint256 _features) public view returns (bool);
-    function enableFeatures(uint256 _features, bool _enable) public;
-}
-
-/*
-    Whitelist interface
-*/
-contract IWhitelist {
-    function isWhitelisted(address _address) public view returns (bool);
-}
-
-/*
-    Token Holder interface
-*/
-contract ITokenHolder is IOwned {
-    function withdrawTokens(IERC20Token _token, address _to, uint256 _amount) public;
-}
-
-/*
-    Ether Token interface
-*/
-contract IEtherToken is ITokenHolder, IERC20Token {
-    function deposit() public payable;
-    function withdraw(uint256 _amount) public;
-    function withdrawTo(address _to, uint256 _amount) public;
-}
-
-/*
-    Smart Token interface
-*/
-contract ISmartToken is IOwned, IERC20Token {
-    function disableTransfers(bool _disable) public;
-    function issue(address _to, uint256 _amount) public;
-    function destroy(address _from, uint256 _amount) public;
-}
-
-/*
-    Bancor Gas Price Limit interface
-*/
-contract IBancorGasPriceLimit {
-    function gasPrice() public view returns (uint256) {}
-    function validateGasPrice(uint256) public view;
-}
-
-/*
-    Bancor Converter interface
-*/
-contract IBancorConverter {
-    function getReturn(IERC20Token _fromToken, IERC20Token _toToken, uint256 _amount) public view returns (uint256);
-    function convert(IERC20Token _fromToken, IERC20Token _toToken, uint256 _amount, uint256 _minReturn) public returns (uint256);
-    function conversionWhitelist() public view returns (IWhitelist) {}
-    // deprecated, backward compatibility
-    function change(IERC20Token _fromToken, IERC20Token _toToken, uint256 _amount, uint256 _minReturn) public returns (uint256);
-}
-
-/*
-    Bancor Network interface
-*/
-contract IBancorNetwork {
-    function convert(IERC20Token[] _path, uint256 _amount, uint256 _minReturn) public payable returns (uint256);
-    function convertFor(IERC20Token[] _path, uint256 _amount, uint256 _minReturn, address _for) public payable returns (uint256);
-    function convertForPrioritized2(
-        IERC20Token[] _path,
-        uint256 _amount,
-        uint256 _minReturn,
-        address _for,
-        uint256 _block,
-        uint8 _v,
-        bytes32 _r,
-        bytes32 _s)
-        public payable returns (uint256);
-
-    // deprecated, backward compatibility
-    function convertForPrioritized(
-        IERC20Token[] _path,
-        uint256 _amount,
-        uint256 _minReturn,
-        address _for,
-        uint256 _block,
-        uint256 _nonce,
-        uint8 _v,
-        bytes32 _r,
-        bytes32 _s)
-        public payable returns (uint256);
-}
-
-/*
-    Utilities & Common Modifiers
-*/
-contract Utils {
-    /**
-        constructor
-    */
-    function Utils() public {
-    }
-
-    // verifies that an amount is greater than zero
-    modifier greaterThanZero(uint256 _amount) {
-        require(_amount > 0);
-        _;
-    }
-
-    // validates an address - currently only checks that it isn't null
-    modifier validAddress(address _address) {
-        require(_address != address(0));
-        _;
-    }
-
-    // verifies that the address is different than this contract address
-    modifier notThis(address _address) {
-        require(_address != address(this));
-        _;
-    }
-
-    // Overflow protected math functions
-
-    /**
-        @dev returns the sum of _x and _y, asserts if the calculation overflows
-
-        @param _x   value 1
-        @param _y   value 2
-
-        @return sum
-    */
-    function safeAdd(uint256 _x, uint256 _y) internal pure returns (uint256) {
-        uint256 z = _x + _y;
-        assert(z >= _x);
-        return z;
-    }
-
-    /**
-        @dev returns the difference of _x minus _y, asserts if the subtraction results in a negative number
-
-        @param _x   minuend
-        @param _y   subtrahend
-
-        @return difference
-    */
-    function safeSub(uint256 _x, uint256 _y) internal pure returns (uint256) {
-        assert(_x >= _y);
-        return _x - _y;
-    }
-
-    /**
-        @dev returns the product of multiplying _x by _y, asserts if the calculation overflows
-
-        @param _x   factor 1
-        @param _y   factor 2
-
-        @return product
-    */
-    function safeMul(uint256 _x, uint256 _y) internal pure returns (uint256) {
-        uint256 z = _x * _y;
-        assert(_x == 0 || z / _x == _y);
-        return z;
-    }
-}
-
-/*
-    Provides support and utilities for contract ownership
-*/
-contract Owned is IOwned {
-    address public owner;
-    address public newOwner;
-
-    event OwnerUpdate(address indexed _prevOwner, address indexed _newOwner);
-
-    /**
-        @dev constructor
-    */
-    function Owned() public {
-        owner = msg.sender;
-    }
-
-    // allows execution by the owner only
-    modifier ownerOnly {
-        assert(msg.sender == owner);
-        _;
-    }
-
-    /**
-        @dev allows transferring the contract ownership
-        the new owner still needs to accept the transfer
-        can only be called by the contract owner
-
-        @param _newOwner    new contract owner
-    */
-    function transferOwnership(address _newOwner) public ownerOnly {
-        require(_newOwner != owner);
-        newOwner = _newOwner;
-    }
-
-    /**
-        @dev used by a new owner to accept an ownership transfer
-    */
-    function acceptOwnership() public {
-        require(msg.sender == newOwner);
-        emit OwnerUpdate(owner, newOwner);
-        owner = newOwner;
-        newOwner = address(0);
-    }
-}
-
-/**
-    Id definitions for bancor contracts
-
-    Can be used in conjunction with the contract registry to get contract addresses
-*/
-contract ContractIds {
-    bytes32 public constant BANCOR_NETWORK = "BancorNetwork";
-    bytes32 public constant BANCOR_FORMULA = "BancorFormula";
-    bytes32 public constant CONTRACT_FEATURES = "ContractFeatures";
-}
-
-/**
-    Id definitions for bancor contract features
-
-    Can be used to query the ContractFeatures contract to check whether a certain feature is supported by a contract
-*/
-contract FeatureIds {
-    // converter features
-    uint256 public constant CONVERTER_CONVERSION_WHITELIST = 1 << 0;
-}
-
-/*
-    We consider every contract to be a 'token holder' since it's currently not possible
-    for a contract to deny receiving tokens.
-
-    The TokenHolder's contract sole purpose is to provide a safety mechanism that allows
-    the owner to send tokens that were sent to the contract by mistake back to their sender.
-*/
-contract TokenHolder is ITokenHolder, Owned, Utils {
-    /**
-        @dev constructor
-    */
-    function TokenHolder() public {
-    }
-
-    /**
-        @dev withdraws tokens held by the contract and sends them to an account
-        can only be called by the owner
-
-        @param _token   ERC20 token contract address
-        @param _to      account to receive the new amount
-        @param _amount  amount to withdraw
-    */
-    function withdrawTokens(IERC20Token _token, address _to, uint256 _amount)
-        public
-        ownerOnly
-        validAddress(_token)
-        validAddress(_to)
-        notThis(_to)
-    {
-        assert(_token.transfer(_to, _amount));
-    }
-}
+pragma solidity ^0.4.23;
+import './IBancorNetwork.sol';
+import './ContractIds.sol';
+import './FeatureIds.sol';
+import './converter/interfaces/IBancorConverter.sol';
+import './converter/interfaces/IBancorFormula.sol';
+import './converter/interfaces/IBancorGasPriceLimit.sol';
+import './utility/TokenHolder.sol';
+import './utility/interfaces/IContractRegistry.sol';
+import './utility/interfaces/IContractFeatures.sol';
+import './utility/interfaces/IWhitelist.sol';
+import './token/interfaces/IEtherToken.sol';
+import './token/interfaces/ISmartToken.sol';
 
 /*
     The BancorNetwork contract is the main entry point for bancor token conversions.
@@ -315,9 +31,10 @@ contract TokenHolder is ITokenHolder, Owned, Utils {
     [source token, smart token, to token, smart token, to token...]
 */
 contract BancorNetwork is IBancorNetwork, TokenHolder, ContractIds, FeatureIds {
+    uint64 private constant MAX_CONVERSION_FEE = 1000000;
+
     address public signerAddress = 0x0;         // verified address that allows conversions with higher gas price
     IContractRegistry public registry;          // contract registry contract address
-    IBancorGasPriceLimit public gasPriceLimit;  // bancor universal gas price limit contract
 
     mapping (address => bool) public etherTokens;       // list of all supported ether tokens
     mapping (bytes32 => bool) public conversionHashes;  // list of conversion hashes, to prevent re-use of the same hash
@@ -327,7 +44,7 @@ contract BancorNetwork is IBancorNetwork, TokenHolder, ContractIds, FeatureIds {
 
         @param _registry    address of a contract registry contract
     */
-    function BancorNetwork(IContractRegistry _registry) public validAddress(_registry) {
+    constructor(IContractRegistry _registry) public validAddress(_registry) {
         registry = _registry;
     }
 
@@ -342,27 +59,13 @@ contract BancorNetwork is IBancorNetwork, TokenHolder, ContractIds, FeatureIds {
 
         @param _registry   address of a contract registry contract
     */
-    function setContractRegistry(IContractRegistry _registry)
+    function setRegistry(IContractRegistry _registry)
         public
         ownerOnly
         validAddress(_registry)
         notThis(_registry)
     {
         registry = _registry;
-    }
-
-    /*
-        @dev allows the owner to update the gas price limit contract address
-
-        @param _gasPriceLimit   address of a bancor gas price limit contract
-    */
-    function setGasPriceLimit(IBancorGasPriceLimit _gasPriceLimit)
-        public
-        ownerOnly
-        validAddress(_gasPriceLimit)
-        notThis(_gasPriceLimit)
-    {
-        gasPriceLimit = _gasPriceLimit;
     }
 
     /*
@@ -559,10 +262,13 @@ contract BancorNetwork is IBancorNetwork, TokenHolder, ContractIds, FeatureIds {
         validConversionPath(_path)
         returns (uint256)
     {
-        if (_v == 0x0 && _r == 0x0 && _s == 0x0)
+        if (_v == 0x0 && _r == 0x0 && _s == 0x0) {
+            IBancorGasPriceLimit gasPriceLimit = IBancorGasPriceLimit(registry.addressOf(ContractIds.BANCOR_GAS_PRICE_LIMIT));
             gasPriceLimit.validateGasPrice(tx.gasprice);
-        else
+        }
+        else {
             require(verifyTrustedSender(_path, _amount, _block, _for, _v, _r, _s));
+        }
 
         // if ETH is provided, ensure that the amount is identical to _amount and verify that the source token is an ether token
         IERC20Token fromToken = _path[0];
@@ -605,7 +311,7 @@ contract BancorNetwork is IBancorNetwork, TokenHolder, ContractIds, FeatureIds {
         IBancorConverter converter;
 
         // get the contract features address from the registry
-        IContractFeatures features = IContractFeatures(registry.getAddress(ContractIds.CONTRACT_FEATURES));
+        IContractFeatures features = IContractFeatures(registry.addressOf(ContractIds.CONTRACT_FEATURES));
 
         // iterate over the conversion path
         uint256 pathLength = _path.length;
@@ -624,6 +330,76 @@ contract BancorNetwork is IBancorNetwork, TokenHolder, ContractIds, FeatureIds {
             _fromToken = toToken;
         }
         return (toToken, _amount);
+    }
+
+    /**
+        @dev returns the expected return amount for converting a specific amount by following
+        a given conversion path.
+        notice that there is no support for circular paths.
+
+        @param _path        conversion path, see conversion path format above
+        @param _amount      amount to convert from (in the initial source token)
+
+        @return expected conversion return amount
+    */
+    function getReturnByPath(IERC20Token[] _path, uint256 _amount) public view returns (uint256) {
+        IERC20Token fromToken;
+        ISmartToken smartToken; 
+        IERC20Token toToken;
+        IBancorConverter converter;
+        uint32 weight;
+        uint256 amount;
+        uint256 supply;
+        ISmartToken prevSmartToken;
+        IBancorFormula formula = IBancorFormula(registry.getAddress(ContractIds.BANCOR_FORMULA));
+
+        amount = _amount;
+        fromToken = _path[0];
+        uint256 pathLength = _path.length;
+
+        // iterate over the conversion path
+        for (uint256 i = 1; i < pathLength; i += 2) {
+            smartToken = ISmartToken(_path[i]);
+            toToken = _path[i + 1];
+            converter = IBancorConverter(smartToken.owner());
+
+            if (toToken == smartToken) { // buy the smart token
+                // check if the current smart token supply was changed in the previous iteration
+                supply = smartToken == prevSmartToken ? supply : smartToken.totalSupply();
+
+                // validate input
+                require(getConnectorPurchaseEnabled(converter, fromToken));
+
+                weight = getConnectorWeight(converter, fromToken);
+
+                // calculate the amount minus the conversion fee
+                amount = formula.calculatePurchaseReturn(supply, converter.getConnectorBalance(fromToken), weight, amount);
+                amount = safeMul(amount, (MAX_CONVERSION_FEE - converter.conversionFee())) / MAX_CONVERSION_FEE;
+
+                // update the smart token supply for the next iteration
+                supply = smartToken.totalSupply() + amount;
+            }
+            else if (fromToken == smartToken) { // sell the smart token
+                // check if the current smart token supply was changed in the previous iteration
+                supply = smartToken == prevSmartToken ? supply : smartToken.totalSupply();
+
+                weight = getConnectorWeight(converter, toToken);
+
+                // calculate the amount minus the conversion fee
+                amount = formula.calculateSaleReturn(supply, converter.getConnectorBalance(toToken), weight, amount);
+                amount = safeMul(amount, (MAX_CONVERSION_FEE - converter.conversionFee())) / MAX_CONVERSION_FEE;
+
+                // update the smart token supply for the next iteration
+                supply = smartToken.totalSupply() - amount;
+            }
+            else { // cross connector conversion
+                amount = converter.getReturn(fromToken, toToken, amount);
+            }
+
+            prevSmartToken = smartToken;
+            fromToken = toToken;
+        }
+        return amount;
     }
 
     /**
@@ -721,6 +497,50 @@ contract BancorNetwork is IBancorNetwork, TokenHolder, ContractIds, FeatureIds {
         assert(_token.approve(_spender, _value));
     }
 
+    /**
+        @dev returns the connector weight
+
+        @param _converter       converter contract address
+        @param _connector       connector's address to read from
+
+        @return connector's weight
+    */
+    function getConnectorWeight(IBancorConverter _converter, IERC20Token _connector) 
+        private
+        view
+        returns(uint32)
+    {
+        uint256 virtualBalance;
+        uint32 weight;
+        bool isVirtualBalanceEnabled;
+        bool isPurchaseEnabled;
+        bool isSet;
+        (virtualBalance, weight, isVirtualBalanceEnabled, isPurchaseEnabled, isSet) = _converter.connectors(_connector);
+        return weight;
+    }
+
+    /**
+        @dev returns true if connector purchase enabled
+
+        @param _converter       converter contract address
+        @param _connector       connector's address to read from
+
+        @return true if connector purchase enabled, otherwise - false
+    */
+    function getConnectorPurchaseEnabled(IBancorConverter _converter, IERC20Token _connector) 
+        private
+        view
+        returns(bool)
+    {
+        uint256 virtualBalance;
+        uint32 weight;
+        bool isVirtualBalanceEnabled;
+        bool isPurchaseEnabled;
+        bool isSet;
+        (virtualBalance, weight, isVirtualBalanceEnabled, isPurchaseEnabled, isSet) = _converter.connectors(_connector);
+        return isPurchaseEnabled;
+    }
+
     // deprecated, backward compatibility
     function convertForPrioritized(
         IERC20Token[] _path,
@@ -734,6 +554,7 @@ contract BancorNetwork is IBancorNetwork, TokenHolder, ContractIds, FeatureIds {
         bytes32 _s)
         public payable returns (uint256)
     {
+        _nonce;
         convertForPrioritized2(_path, _amount, _minReturn, _for, _block, _v, _r, _s);
     }
 }
