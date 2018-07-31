@@ -35,21 +35,25 @@ contract WETH is Token {
   function withdraw(uint wad) public {}
 }
 
-contract Bancor {
-   //function quickConvert(address[], uint256, uint256) public payable returns (uint256) {}
-   //function quickConvertPrioritized(address[] _path, uint256, uint256, uint256, uint8, bytes32, bytes32) public payable returns (uint256) {}
-    function convert(address[] _path, uint256 _amount, uint256 _minReturn) public payable returns (uint256);
-    function convertFor(address[] _path, uint256 _amount, uint256 _minReturn, address _for) public payable returns (uint256);
-    function convertForPrioritized2(
-        address[] _path,
-        uint256 _amount,
-        uint256 _minReturn,
-        address _for,
-        uint256 _block,
-        uint8 _v,
-        bytes32 _r,
-        bytes32 _s)
-        public payable returns (uint256);
+contract BancorConverter {
+  function quickConvert(address[], uint256, uint256) public payable returns (uint256) {}
+  function quickConvertPrioritized(address[] _path, uint256, uint256, uint256, uint8, bytes32, bytes32) public payable returns (uint256) {}
+  function convert(address _fromToken, address _toToken, uint256 _amount, uint256 _minReturn) public returns (uint256) {}
+}
+
+contract BancorNetwork {
+  function convert(address[] _path, uint256 _amount, uint256 _minReturn) public payable returns (uint256);
+  function convertFor(address[] _path, uint256 _amount, uint256 _minReturn, address _for) public payable returns (uint256);
+  function convertForPrioritized2(
+    address[] _path,
+    uint256 _amount,
+    uint256 _minReturn,
+    address _for,
+    uint256 _block,
+    uint8 _v,
+    bytes32 _r,
+    bytes32 _s)
+    public payable returns (uint256);
 }
 
 contract InstantTrade is SafeMath, Ownable {
@@ -202,7 +206,8 @@ contract InstantTrade is SafeMath, Ownable {
     }  
   } 
   
-    //approve tokens to bancorNetwork instead of to this
+
+   // End to end trading in a single call through the bancorNetwork contract
   function instantTradeBancor(address[] _path, uint _sourceAmount, uint256 _minReturn) external payable {
     
     // Fix max fee (0.4%) and always reserve it
@@ -216,7 +221,7 @@ contract InstantTrade is SafeMath, Ownable {
       require(msg.value == totalValue);
      
      //Trade and let Bancor immediately transfer the resulting value to the sender
-      customerValue = Bancor(bancorNetwork).convertForPrioritized2.value(_sourceAmount)(_path, _sourceAmount, _minReturn, msg.sender, 0x0, 0x0, 0x0, 0x0);
+      customerValue = BancorNetwork(bancorNetwork).convertForPrioritized2.value(_sourceAmount)(_path, _sourceAmount, _minReturn, msg.sender, 0x0, 0x0, 0x0, 0x0);
       require(customerValue >= _minReturn);
       
     } else {
@@ -229,8 +234,49 @@ contract InstantTrade is SafeMath, Ownable {
       require(Token(_path[0]).transfer(bancorNetwork, _sourceAmount));
       
       //Trade and let Bancor immediately transfer the resulting value to the sender
-      customerValue = Bancor(bancorNetwork).convertForPrioritized2(_path, _sourceAmount, _minReturn, msg.sender, 0x0, 0x0, 0x0, 0x0);
+      customerValue = BancorNetwork(bancorNetwork).convertForPrioritized2(_path, _sourceAmount, _minReturn, msg.sender, 0x0, 0x0, 0x0, 0x0);
       require(customerValue >= _minReturn);
+    }
+  }
+  
+  // End to end trading in a single call, using a Bancor prioritized trade (API approved) on a BancorConverter 
+  // https://support.bancor.network/hc/en-us/articles/360001455772-Build-a-transaction-using-the-Convert-API
+  function instantTradeBancorPrioritized(address _converter, address[] _path, uint _sourceAmount, uint256 _minReturn, uint256 _block, uint8 _v, bytes32 _r, bytes32 _s) external payable {
+    
+    // Fix max fee (0.4%) and always reserve it
+    uint totalValue = safeMul(_sourceAmount, 1004) / 1000;
+    uint customerValue;
+    
+    // Paying with Ethereum or token? 
+    if (_path[0] == etherToken) {
+    
+      // Check amount of ether sent to make sure it's correct
+      require(msg.value == totalValue);
+     
+     //Trade
+      customerValue = BancorConverter(_converter).quickConvertPrioritized.value(_sourceAmount)(_path, _sourceAmount, _minReturn, _block, _v, _r, _s);
+      require(customerValue >= _minReturn);
+      
+      //send back token received from converter
+      Token(_path[_path.length -1]).transfer(msg.sender, customerValue);
+      
+    } else {
+    
+      // Make sure not to accept ETH when selling tokens
+      require(msg.value == 0);
+           
+      // get tokens from sender, send to bancorNetwork after removing fee
+      Token token = Token(_path[0]);
+      
+      require(token.transferFrom(msg.sender, this, totalValue));
+      require(token.approve(_converter, _sourceAmount)); 
+      
+      //Trade
+      customerValue =  BancorConverter(_converter).quickConvertPrioritized(_path, _sourceAmount, _minReturn, _block, _v, _r, _s);
+      require(customerValue >= _minReturn);
+      
+      //send back ETH received from converter
+       msg.sender.transfer(customerValue);
     }
   }
   
