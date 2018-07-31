@@ -38,7 +38,18 @@ contract WETH is Token {
 contract Bancor {
    //function quickConvert(address[], uint256, uint256) public payable returns (uint256) {}
    //function quickConvertPrioritized(address[] _path, uint256, uint256, uint256, uint8, bytes32, bytes32) public payable returns (uint256) {}
-   function convertForPrioritized2(address[] _path, uint256, uint256, address, uint256, uint8, bytes32, bytes32) public payable returns (uint256) {}
+    function convert(address[] _path, uint256 _amount, uint256 _minReturn) public payable returns (uint256);
+    function convertFor(address[] _path, uint256 _amount, uint256 _minReturn, address _for) public payable returns (uint256);
+    function convertForPrioritized2(
+        address[] _path,
+        uint256 _amount,
+        uint256 _minReturn,
+        address _for,
+        uint256 _block,
+        uint8 _v,
+        bytes32 _r,
+        bytes32 _s)
+        public payable returns (uint256);
 }
 
 contract InstantTrade is SafeMath, Ownable {
@@ -192,7 +203,7 @@ contract InstantTrade is SafeMath, Ownable {
   } 
   
     //approve tokens to bancorNetwork instead of to this
-  function instantTradeBancor(uint _sourceAmount, address[] _path, uint256 _minReturn) external payable {
+  function instantTradeBancor(address[] _path, uint _sourceAmount, uint256 _minReturn) external payable {
     
     // Fix max fee (0.4%) and always reserve it
     uint totalValue = safeMul(_sourceAmount, 1004) / 1000;
@@ -213,12 +224,13 @@ contract InstantTrade is SafeMath, Ownable {
       // Make sure not to accept ETH when selling tokens
       require(msg.value == 0);
            
-      // transfer amount directly to bancor network
-      require(Token(_path[0]).transferFrom(msg.sender, bancorNetwork, _sourceAmount));
+      // get tokens from sender, send to bancorNetwork after removing fee
+      require(Token(_path[0]).transferFrom(msg.sender, this, totalValue));
+      require(Token(_path[0]).transfer(bancorNetwork, _sourceAmount));
       
       //Trade and let Bancor immediately transfer the resulting value to the sender
-       customerValue = Bancor(bancorNetwork).convertForPrioritized2(_path, _sourceAmount, _minReturn, msg.sender, 0x0, 0x0, 0x0, 0x0);
-       require(customerValue >= _minReturn);
+      customerValue = Bancor(bancorNetwork).convertForPrioritized2(_path, _sourceAmount, _minReturn, msg.sender, 0x0, 0x0, 0x0, 0x0);
+      require(customerValue >= _minReturn);
     }
   }
   

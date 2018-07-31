@@ -8,6 +8,16 @@ var ZeroX = artifacts.require("./InstantTradeContracts/0x/Exchange.sol");
 var ZeroProxy = artifacts.require("./InstantTradeContracts/0x/TokenTransferProxy.sol");
 var ZRXToken = artifacts.require("./InstantTradeContracts/0x/ZRXToken.sol");
 
+var BancorNetwork = artifacts.require("./InstantTradeContracts/Bancor/BancorNetwork.sol");
+var EtherToken = artifacts.require("./InstantTradeContracts/Bancor/EtherToken.sol");
+const ContractIds = artifacts.require('./InstantTradeContracts/Bancor/ContractIds.sol');
+const BancorConverter = artifacts.require('./InstantTradeContracts/Bancor/BancorConverter.sol');
+const SmartToken = artifacts.require('./InstantTradeContracts/Bancor/SmartToken.sol');
+const BancorFormula = artifacts.require('./InstantTradeContracts/Bancor/BancorFormula.sol');
+const BancorGasPriceLimit = artifacts.require('./InstantTradeContracts/Bancor/BancorGasPriceLimit.sol');
+const ContractRegistry = artifacts.require('./InstantTradeContracts/Bancor/ContractRegistry.sol');
+const ContractFeatures = artifacts.require('./InstantTradeContracts/Bancor/ContractFeatures.sol');
+
 var util = require('./util.js');
 var config = require('../truffle-config.js');
 
@@ -24,6 +34,7 @@ contract("InstantTrade", function (accounts) {
   const revertError = "VM Exception while processing transaction: revert";
 
   var tokenStore, instantTrade, token, etherDelta, wETH, zeroX, zeroProxy, zrxToken;
+  var bancorNetwork, etherToken, smartToken, converter;
 
   before(async function () {
     /* Deployed in migrations by accounts[0] */
@@ -38,19 +49,7 @@ contract("InstantTrade", function (accounts) {
     zrxToken = await ZRXToken.new({ from: feeAccount });
     zeroProxy = await ZeroProxy.new({ from: feeAccount });
     zeroX = await ZeroX.new(zrxToken.address, zeroProxy.address, { from: feeAccount });
-    instantTrade = await InstantTrade.new(wETH.address, zeroX.address, zeroAddress, zeroAddress, { from: feeAccount });
-
     await zeroProxy.addAuthorizedAddress(zeroX.address, { from: feeAccount });
-    await instantTrade.allowFallback(tokenStore.address, true, { from: feeAccount });
-    await instantTrade.allowFallback(etherDelta.address, true, { from: feeAccount });
-
-    // check onlyOwner modifier
-    try {
-      await instantTrade.allowFallback(etherDelta.address, true, { from: accounts[1] });
-      assert(false, "Only onwer can do this");
-    } catch (error) {
-      assert.equal(error.message, revertError);
-    }
 
 
     /* Give accounts 1 to 4 some tokens, make them deposit both tokens and ether */
@@ -65,6 +64,62 @@ contract("InstantTrade", function (accounts) {
       //    await token.approve(tokenStore.address, depositedToken, { from: accounts[i] });
       //    await tokenStore.depositToken(token.address, depositedToken, { from: accounts[i] });
       //    await tokenStore.deposit({ from: accounts[i], value: depositedEther });
+    }
+
+    // initialize bancor network
+    {
+      let contractRegistry = await ContractRegistry.new();
+      let contractIds = await ContractIds.new();
+
+      let contractFeatures = await ContractFeatures.new();
+      let contractFeaturesId = await contractIds.CONTRACT_FEATURES.call();
+      await contractRegistry.registerAddress(contractFeaturesId, contractFeatures.address);
+
+      let gasPriceLimit = await BancorGasPriceLimit.new(gasPrice);
+      let gasPriceLimitId = await contractIds.BANCOR_GAS_PRICE_LIMIT.call();
+      await contractRegistry.registerAddress(gasPriceLimitId, gasPriceLimit.address);
+
+      let formula = await BancorFormula.new();
+      let formulaId = await contractIds.BANCOR_FORMULA.call();
+      await contractRegistry.registerAddress(formulaId, formula.address);
+
+      bancorNetwork = await BancorNetwork.new(contractRegistry.address);
+      let bancorNetworkId = await contractIds.BANCOR_NETWORK.call();
+      await contractRegistry.registerAddress(bancorNetworkId, bancorNetwork.address);
+      await bancorNetwork.setSignerAddress(accounts[0]);
+
+      etherToken = await EtherToken.new();
+      await etherToken.deposit({ value: 10000000 });
+
+      await bancorNetwork.registerEtherToken(etherToken.address, true);
+
+      smartToken = await SmartToken.new('Token4', 'TKN4', 2);
+      await smartToken.issue(accounts[0], 2500000);
+
+      converter = await BancorConverter.new(smartToken.address, contractRegistry.address, 0, etherToken.address, 150000);
+      await converter.addConnector(token.address, 220000, false);
+
+      await etherToken.transfer(converter.address, 50000);
+      await smartToken.transfer(converter.address, 40000);
+      await token.transfer(converter.address, 35000);
+
+      await smartToken.transferOwnership(converter.address);
+      await converter.acceptTokenOwnership();
+
+      await converter.setQuickBuyPath([etherToken.address, smartToken.address, token.address]);
+    }
+
+
+    instantTrade = await InstantTrade.new(wETH.address, zeroX.address, bancorNetwork.address, etherToken.address, { from: feeAccount });
+    await instantTrade.allowFallback(tokenStore.address, true, { from: feeAccount });
+    await instantTrade.allowFallback(etherDelta.address, true, { from: feeAccount });
+
+    // check onlyOwner modifier
+    try {
+      await instantTrade.allowFallback(etherDelta.address, true, { from: accounts[1] });
+      assert(false, "Only onwer can do this");
+    } catch (error) {
+      assert.equal(error.message, revertError);
     }
 
   });
@@ -277,6 +332,81 @@ contract("InstantTrade", function (accounts) {
       assert.equal(error.message, revertError);
     }
   });
+
+
+  it('Buy tokens Bancor', async () => {
+    let taker = accounts[7];
+    let sourceAmount = 10000;
+    let minReturn = 1;
+    let tradePath = [etherToken.address, smartToken.address, token.address];
+
+    let prevBalance = await web3.eth.getBalance(taker);
+    let prevInstantBalance = await web3.eth.getBalance(instantTrade.address);
+    let prevTokenBalance = await token.balanceOf(taker);
+
+
+    let expectedReturn = await bancorNetwork.getReturnByPath(tradePath, sourceAmount);
+
+    /* How to perform the same trade through the converter or network itself 
+      let trade = await converter.quickConvert(tradePath, sourceAmount, minReturn, { from: taker, value: sourceAmount });
+      let trade = await bancorNetwork.convertFor(tradePath, sourceAmount, minReturn, taker, { from:taker, value: sourceAmount });
+    */
+
+    let sourceAmountFee = (sourceAmount * 1004) / 1000;
+    let fee = (sourceAmount * 4) / 1000;
+
+    let trade = await instantTrade.instantTradeBancor(tradePath, sourceAmount, minReturn, { from: taker, value: sourceAmountFee });
+    let gas = trade.receipt.gasUsed * gasPrice;
+    let newBalance = await web3.eth.getBalance(taker);
+    let newInstantBalance = await web3.eth.getBalance(instantTrade.address);
+    let newTokenBalance = await token.balanceOf(taker);
+
+
+    assert.equal(newTokenBalance.toNumber(), prevTokenBalance.plus(expectedReturn).toNumber(), "Bought the right amount of tokens");
+    assert.equal(newBalance.toNumber(), prevBalance.minus(10000).minus(gas).toNumber(), "ETH is reduced correctly");
+    assert.equal(prevInstantBalance.plus(fee).toString(), newInstantBalance.toString(), "Fees are paid");
+  });
+
+
+  it('Sell tokens Bancor', async () => {
+    let taker = accounts[1];
+    let sourceAmount = 10000;
+    let minReturn = 1;
+    let tradePath = [token.address, smartToken.address, etherToken.address];
+
+    let expectedReturn = await bancorNetwork.getReturnByPath(tradePath, sourceAmount);
+
+    /* How to perform the same trade through the converter or network itself 
+
+      await token.approve(converter.address, sourceAmount, { from: taker });
+      let trade = await converter.quickConvert(tradePath, sourceAmount, minReturn, { from: taker});
+
+      await token.transfer(bancorNetwork.address, sourceAmount, { from: taker });
+      let trade = await bancorNetwork.convertFor(tradePath, sourceAmount, minReturn, taker, {from:taker});
+    */
+
+    let sourceAmountFee = (sourceAmount * 1004) / 1000;
+    let fee = (sourceAmount * 4) / 1000;
+    await token.approve(instantTrade.address, sourceAmountFee, { from: taker });
+
+    let prevBalance = await web3.eth.getBalance(taker);
+    let prevTokenBalance = await token.balanceOf(taker);
+    let prevInstantTokenBalance = await token.balanceOf(instantTrade.address);
+
+    let trade = await instantTrade.instantTradeBancor(tradePath, sourceAmount, minReturn, { from: taker });
+
+    let gas = trade.receipt.gasUsed * gasPrice;
+    let newBalance = await web3.eth.getBalance(taker);
+    let newTokenBalance = await token.balanceOf(taker);
+    let newInstantTokenBalance = await token.balanceOf(instantTrade.address);
+
+    assert.equal(prevTokenBalance.minus(sourceAmountFee).toString(), newTokenBalance.toString(), "Sold the right amount of tokens");
+    assert.equal(newBalance.toString(), prevBalance.minus(gas).plus(expectedReturn).toString(), "Received the right amount of ETH");
+    assert.equal(prevInstantTokenBalance.plus(fee).toString(), newInstantTokenBalance.toString(), "Fees are paid");
+  });
+
+
+
 
   it("Random ETH transfers fail", async function () {
 
