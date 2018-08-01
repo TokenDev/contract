@@ -78,6 +78,16 @@ export function signBancor(web3, signer, path, converter, amount, block, gaspric
   return sig;
 }
 
+export function signAirSwapOrder(web3, makerAddress, makerAmount, makerToken, takerAddress, takerAmount, takerToken, expiration, nonce) {
+  const hash = web3Util.soliditySha3(makerAddress, makerAmount, makerToken, takerAddress, takerAmount, takerToken, expiration, nonce);
+  let sigResult = web3.eth.sign(makerAddress, hash);
+  let sig = ethUtil.fromRpcSig(sigResult);
+  sig.r = `0x${sig.r.toString('hex')}`;
+  sig.s = `0x${sig.s.toString('hex')}`;
+  sig.hash = hash;
+  return sig;
+}
+
 /*
 export function getRandomInt (min, max) {
   return Math.floor(Math.random() * (max - min)) + min

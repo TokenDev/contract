@@ -56,6 +56,12 @@ contract BancorNetwork {
     public payable returns (uint256);
 }
 
+contract AirSwap {
+   function fill(address makerAddress, uint makerAmount, address makerToken,
+                  address takerAddress, uint takerAmount, address takerToken,
+                  uint256 expiration, uint256 nonce, uint8 v, bytes32 r, bytes32 s) payable {}
+}
+
 contract InstantTrade is SafeMath, Ownable {
 
   address public wETH;
@@ -63,15 +69,17 @@ contract InstantTrade is SafeMath, Ownable {
   address public zeroX;
   address public proxyZeroX;
   address public bancorNetwork;
+  address public airSwap;
     
   mapping(address => bool) allowedFallbacks; // Limit fallback to avoid accidental ETH transfers
     
-  constructor(address _weth, address _zeroX, address _bancorNet, address _bancorEther) Ownable() public {
+  constructor(address _weth, address _zeroX, address _bancorNet, address _bancorEther, address _airSwap) Ownable() public {
     wETH = _weth;
     zeroX = _zeroX;
     proxyZeroX = ZeroExchange(zeroX).TOKEN_TRANSFER_PROXY_CONTRACT();
     etherToken = _bancorEther;
     bancorNetwork = _bancorNet;
+    airSwap = _airSwap;
     
     allowedFallbacks[wETH] = true;
     allowedFallbacks[etherToken] = true;
@@ -286,6 +294,56 @@ contract InstantTrade is SafeMath, Ownable {
       
       //send ETH to user
        msg.sender.transfer(customerValue);
+    }
+  }
+  
+  
+  // End to end trading in a single call, using AirSwap. Request order from a maker using the API
+   function instantTradeAirSwap(address _makerAddress, uint _makerAmount, address _makerToken,
+     address _takerAddress, uint _takerAmount, address _takerToken, uint256 _expiration, uint256 _nonce, uint8 _v, bytes32 _r, bytes32 _s) external payable {
+    
+    // Fix max fee (0.4%) and always reserve it
+    uint totalValue = safeMul(_takerAmount, 1004) / 1000;
+    
+    
+    // Paying with Ethereum or token? Deposit to the actual store
+    if (_takerToken == address(0)) {
+    
+      // Check amount of ether sent to make sure it's correct
+      require(msg.value == totalValue);
+      
+      totalValue = Token(_makerToken).balanceOf(address(this)); // save balance, reuse totalValue for gas savings
+      // Trade
+      AirSwap(airSwap).fill.value(_takerAmount)(_makerAddress, _makerAmount, _makerToken, _takerAddress, _takerAmount, _takerToken, _expiration, _nonce, _v, _r, _s);
+      //did we receive the right amount of tokens?
+      require(safeAdd(totalValue, _makerAmount) == Token(_makerToken).balanceOf(address(this)));
+       
+      //send tokens to user
+      Token(_makerToken).transfer(msg.sender, _makerAmount);
+       
+    } else {
+    
+      // Make sure not to accept ETH when selling tokens
+      require(msg.value == 0 && _makerToken == wETH);
+      
+      WETH weth = WETH(_makerToken);
+      
+      // Assuming user already approved transfer, transfer to this contract
+      require(Token(_takerToken).transferFrom(msg.sender, this, totalValue));
+      require(Token(_takerToken).approve(airSwap, _takerAmount)); 
+      
+      totalValue = weth.balanceOf(address(this)); // save balance, reuse totalValue for gas savings
+      
+      // Trade
+      AirSwap(airSwap).fill(_makerAddress, _makerAmount, _makerToken, _takerAddress, _takerAmount, _takerToken, _expiration, _nonce, _v, _r, _s);
+      //did we receive the right amount of WETH?
+      require(safeAdd(totalValue, _makerAmount) == weth.balanceOf(address(this)));
+      
+      // Unwrap WETH
+      weth.withdraw(_makerAmount);
+      
+      //send ETH to user
+      msg.sender.transfer(_makerAmount);
     }
   }
   

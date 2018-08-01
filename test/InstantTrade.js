@@ -18,6 +18,8 @@ const BancorGasPriceLimit = artifacts.require('./InstantTradeContracts/Bancor/Ba
 const ContractRegistry = artifacts.require('./InstantTradeContracts/Bancor/ContractRegistry.sol');
 const ContractFeatures = artifacts.require('./InstantTradeContracts/Bancor/ContractFeatures.sol');
 
+var AirSwap = artifacts.require("./InstantTradeContracts/AirSwapExchange.sol");
+
 var util = require('./util.js');
 var config = require('../truffle-config.js');
 
@@ -35,6 +37,7 @@ contract("InstantTrade", function (accounts) {
 
   var tokenStore, instantTrade, token, etherDelta, wETH, zeroX, zeroProxy, zrxToken;
   var bancorNetwork, etherToken, smartToken, converter;
+  var airSwap;
 
   before(async function () {
     /* Deployed in migrations by accounts[0] */
@@ -51,9 +54,10 @@ contract("InstantTrade", function (accounts) {
     zeroX = await ZeroX.new(zrxToken.address, zeroProxy.address, { from: feeAccount });
     await zeroProxy.addAuthorizedAddress(zeroX.address, { from: feeAccount });
 
+    airSwap = await AirSwap.new({ from: feeAccount });
 
     /* Give accounts 1 to 4 some tokens, make them deposit both tokens and ether */
-    for (let i = 1; i < 9; i++) {
+    for (let i = 1; i < 10; i++) {
 
       await token.transfer(accounts[i], userToken, { from: feeAccount });
 
@@ -110,7 +114,7 @@ contract("InstantTrade", function (accounts) {
     }
 
 
-    instantTrade = await InstantTrade.new(wETH.address, zeroX.address, bancorNetwork.address, etherToken.address, { from: feeAccount });
+    instantTrade = await InstantTrade.new(wETH.address, zeroX.address, bancorNetwork.address, etherToken.address, airSwap.address, { from: feeAccount });
     await instantTrade.allowFallback(tokenStore.address, true, { from: feeAccount });
     await instantTrade.allowFallback(etherDelta.address, true, { from: feeAccount });
 
@@ -135,6 +139,10 @@ contract("InstantTrade", function (accounts) {
 
   function signBancor(maxBlock, gasprice, user, converter, amount, path) {
     return util.signBancor(web3, feeAccount, path, converter, amount, maxBlock, gasprice, user);
+  }
+
+  function signAirSwapOrder(makerAddress, makerAmount, makerToken, takerAddress, takerAmount, takerToken, expiration, nonce) {
+    return util.signAirSwapOrder(web3, makerAddress, makerAmount, makerToken, takerAddress, takerAmount, takerToken, expiration, nonce)
   }
 
   it("Sell tokens EtherDelta", async function () {
@@ -463,6 +471,83 @@ contract("InstantTrade", function (accounts) {
 
   });
 
+
+  it('Buy tokens AirSwap', async function () {
+
+    let taker = accounts[8];
+    let maker = accounts[9];
+    let contractTaker = instantTrade.address;
+
+    let makerToken = token.address;
+    let makerAmount = depositedToken;
+    let takerToken = zeroAddress
+    let takerAmount = depositedEther;
+    let expiration = 2524636800; // expiration timestamp in seconds
+    let nonce = 1;
+
+    await token.approve(airSwap.address, makerAmount, { from: maker });
+
+    let order = signAirSwapOrder(maker, makerAmount, makerToken, contractTaker, takerAmount, takerToken, expiration, nonce);
+
+    let filled = await airSwap.fills(order.hash);
+    assert(!filled, "new order isnt filled");
+
+
+    let etherBalance = await web3.eth.getBalance(taker);
+    let tokenBalance = await token.balanceOf(taker);
+
+    let allowedMaker = await token.allowance(maker, airSwap.address);
+    assert.equal(String(allowedMaker), String(makerAmount), 'maker allowance');
+
+    let amountFee = (takerAmount * 1.004); //add 0.4%
+
+    let trade = await instantTrade.instantTradeAirSwap(maker, makerAmount, makerToken, contractTaker, takerAmount, takerToken, expiration, nonce, order.v, order.r, order.s, { from: taker, value: amountFee });
+
+    let gas = trade.receipt.gasUsed * gasPrice;
+
+    assert.equal(String(await web3.eth.getBalance(taker)), String(etherBalance.minus(amountFee).minus(gas)), "Ether balance normal");
+    assert.equal(String(await token.balanceOf(taker)), String(tokenBalance.plus(makerAmount)), "Token balance normal");
+
+  });
+
+  it('Sell tokens AirSwap', async function () {
+    let taker = accounts[9];
+    let maker = accounts[8];
+    let contractTaker = instantTrade.address;
+
+    let makerToken = wETH.address;
+    let makerAmount = depositedEther;
+    let takerToken = token.address;
+    let takerAmount = depositedToken;
+    let expiration = 2524636800; // expiration timestamp in seconds
+    let nonce = 2;
+
+    await wETH.deposit({ from: maker, value: makerAmount });
+    await wETH.approve(airSwap.address, makerAmount, { from: maker });
+
+    let order = signAirSwapOrder(maker, makerAmount, makerToken, contractTaker, takerAmount, takerToken, expiration, nonce);
+
+    let Filled = await airSwap.fills(order.hash);
+    assert(!Filled, "new order isnt filled");
+
+
+    let amountFee = (takerAmount * 1.004); //add 0.4%
+    await token.approve(instantTrade.address, amountFee, { from: taker });
+
+    let etherBalance = await web3.eth.getBalance(taker);
+    let tokenBalance = await token.balanceOf(taker);
+
+    let allowedMaker = await wETH.allowance(maker, airSwap.address);
+    assert.equal(String(allowedMaker), String(makerAmount), 'maker allowance');
+    let allowedTaker = await token.allowance(taker, instantTrade.address);
+    assert.equal(String(allowedTaker), String(amountFee), 'taker allowance');
+
+    let trade = await instantTrade.instantTradeAirSwap(maker, makerAmount, makerToken, contractTaker, takerAmount, takerToken, expiration, nonce, order.v, order.r, order.s, { from: taker });
+    let gas = trade.receipt.gasUsed * gasPrice;
+
+    assert.equal(String(await web3.eth.getBalance(taker)), String(etherBalance.plus(makerAmount).minus(gas)), "Ether balance normal");
+    assert.equal(String(await token.balanceOf(taker)), String(tokenBalance.minus(amountFee)), "Token balance normal");
+  });
 
 
 
