@@ -364,8 +364,35 @@ contract("InstantTrade", function (accounts) {
 
 
     assert.equal(newTokenBalance.toNumber(), prevTokenBalance.plus(expectedReturn).toNumber(), "Bought the right amount of tokens");
-    assert.equal(newBalance.toNumber(), prevBalance.minus(10000).minus(gas).toNumber(), "ETH is reduced correctly");
+    assert.equal(newBalance.toNumber(), prevBalance.minus(sourceAmountFee).minus(gas).toNumber(), "ETH is reduced correctly");
     assert.equal(prevInstantBalance.plus(fee).toString(), newInstantBalance.toString(), "Fees are paid");
+
+
+
+    // Buy2 , prioritized with signed message
+
+    let maxBlock = web3.eth.blockNumber + 1000;
+    // simulate signed order from API, with instant trade contract as taker
+    let order = signBancor(maxBlock, gasPrice, instantTrade.address, converter.address, sourceAmount, tradePath);
+
+    expectedReturn = await bancorNetwork.getReturnByPath(tradePath, sourceAmount);
+    prevBalance = await web3.eth.getBalance(taker);
+    prevInstantBalance = await web3.eth.getBalance(instantTrade.address);
+    prevTokenBalance = await token.balanceOf(taker);
+
+    // trade = await converter.quickConvertPrioritized(tradePath, sourceAmount, minReturn, maxBlock, order.v, order.r, order.s, { from: taker, value:sourceAmount});
+    trade = await instantTrade.instantTradeBancorPrioritized(converter.address, tradePath, sourceAmount, minReturn, maxBlock, order.v, order.r, order.s, { from: taker, value: sourceAmountFee });
+    gas = trade.receipt.gasUsed * gasPrice;
+    newBalance = await web3.eth.getBalance(taker);
+    newInstantBalance = await web3.eth.getBalance(instantTrade.address);
+    newTokenBalance = await token.balanceOf(taker);
+
+
+    assert.equal(newTokenBalance.toNumber(), prevTokenBalance.plus(expectedReturn).toNumber(), "2: Bought the right amount of tokens");
+    assert.equal(newBalance.toNumber(), prevBalance.minus(sourceAmountFee).minus(gas).toNumber(), "2: ETH is reduced correctly");
+    assert.equal(prevInstantBalance.plus(fee).toString(), newInstantBalance.toString(), "2: Fees are paid");
+
+
   });
 
 
@@ -404,7 +431,39 @@ contract("InstantTrade", function (accounts) {
     assert.equal(prevTokenBalance.minus(sourceAmountFee).toString(), newTokenBalance.toString(), "Sold the right amount of tokens");
     assert.equal(newBalance.toString(), prevBalance.minus(gas).plus(expectedReturn).toString(), "Received the right amount of ETH");
     assert.equal(prevInstantTokenBalance.plus(fee).toString(), newInstantTokenBalance.toString(), "Fees are paid");
+
+
+
+    // Sell 2, prioritized with signed message
+
+    let maxBlock = web3.eth.blockNumber + 1000;
+    // simulate signed order from API, with instant trade contract as taker
+    let order = signBancor(maxBlock, gasPrice, instantTrade.address, converter.address, sourceAmount, tradePath);
+
+    expectedReturn = await bancorNetwork.getReturnByPath(tradePath, sourceAmount);
+
+    await token.approve(instantTrade.address, sourceAmountFee, { from: taker });
+
+    prevBalance = await web3.eth.getBalance(taker);
+    prevTokenBalance = await token.balanceOf(taker);
+    prevInstantTokenBalance = await token.balanceOf(instantTrade.address);
+
+    // trade = await converter.quickConvertPrioritized(tradePath, sourceAmount, minReturn, maxBlock, order.v, order.r, order.s, { from: taker });
+
+    trade = await instantTrade.instantTradeBancorPrioritized(converter.address, tradePath, sourceAmount, minReturn, maxBlock, order.v, order.r, order.s, { from: taker });
+
+    gas = trade.receipt.gasUsed * gasPrice;
+    newBalance = await web3.eth.getBalance(taker);
+    newTokenBalance = await token.balanceOf(taker);
+    newInstantTokenBalance = await token.balanceOf(instantTrade.address);
+
+    assert.equal(prevTokenBalance.minus(sourceAmountFee).toString(), newTokenBalance.toString(), "2: Sold the right amount of tokens");
+    assert.equal(newBalance.toString(), prevBalance.minus(gas).plus(expectedReturn).toString(), "2: Received the right amount of ETH");
+    assert.equal(prevInstantTokenBalance.plus(fee).toString(), newInstantTokenBalance.toString(), "2: Fees are paid");
+
   });
+
+
 
 
 

@@ -74,6 +74,7 @@ contract InstantTrade is SafeMath, Ownable {
     bancorNetwork = _bancorNet;
     
     allowedFallbacks[wETH] = true;
+    allowedFallbacks[etherToken] = true;
   }
    
   // Only allow incoming ETH from known contracts (Exchange and WETH withdrawals)
@@ -220,7 +221,7 @@ contract InstantTrade is SafeMath, Ownable {
       // Check amount of ether sent to make sure it's correct
       require(msg.value == totalValue);
      
-     //Trade and let Bancor immediately transfer the resulting value to the sender
+      //Trade and let Bancor immediately transfer the resulting value to the sender
       customerValue = BancorNetwork(bancorNetwork).convertForPrioritized2.value(_sourceAmount)(_path, _sourceAmount, _minReturn, msg.sender, 0x0, 0x0, 0x0, 0x0);
       require(customerValue >= _minReturn);
       
@@ -246,6 +247,7 @@ contract InstantTrade is SafeMath, Ownable {
     // Fix max fee (0.4%) and always reserve it
     uint totalValue = safeMul(_sourceAmount, 1004) / 1000;
     uint customerValue;
+    Token token;
     
     // Paying with Ethereum or token? 
     if (_path[0] == etherToken) {
@@ -253,29 +255,36 @@ contract InstantTrade is SafeMath, Ownable {
       // Check amount of ether sent to make sure it's correct
       require(msg.value == totalValue);
      
-     //Trade
+
+      token = Token(_path[_path.length -1]);
+      totalValue = token.balanceOf(address(this)); // save balance, reuse totalValue for gas savings
+      
+      //Trade
       customerValue = BancorConverter(_converter).quickConvertPrioritized.value(_sourceAmount)(_path, _sourceAmount, _minReturn, _block, _v, _r, _s);
-      require(customerValue >= _minReturn);
+      //did we receive the right amount of tokens?
+      require(customerValue >= _minReturn && safeAdd(totalValue, customerValue) == token.balanceOf(address(this)));
       
-      //send back token received from converter
-      Token(_path[_path.length -1]).transfer(msg.sender, customerValue);
-      
+      //send tokens to user
+      token.transfer(msg.sender, customerValue);
     } else {
     
       // Make sure not to accept ETH when selling tokens
       require(msg.value == 0);
            
       // get tokens from sender, send to bancorNetwork after removing fee
-      Token token = Token(_path[0]);
+      token = Token(_path[0]);
       
       require(token.transferFrom(msg.sender, this, totalValue));
       require(token.approve(_converter, _sourceAmount)); 
       
       //Trade
-      customerValue =  BancorConverter(_converter).quickConvertPrioritized(_path, _sourceAmount, _minReturn, _block, _v, _r, _s);
-      require(customerValue >= _minReturn);
       
-      //send back ETH received from converter
+      totalValue = address(this).balance; // save balance, reuse totalValue for gas savings
+      customerValue = BancorConverter(_converter).quickConvertPrioritized(_path, _sourceAmount, _minReturn, _block, _v, _r, _s);
+      //did we receive the right amount of ETH?
+      require(customerValue >= _minReturn && safeAdd(totalValue, customerValue) == address(this).balance);
+      
+      //send ETH to user
        msg.sender.transfer(customerValue);
     }
   }

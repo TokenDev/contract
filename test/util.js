@@ -2,6 +2,7 @@ import BigNumber from 'bignumber.js'
 //import Tx from 'ethereumjs-tx'
 import ethUtil from 'ethereumjs-util'
 import ethAbi from 'ethereumjs-abi'
+import web3Util from 'web3-utils'
 //import coder from 'web3/lib/solidity/coder.js'
 //import utils from 'web3/lib/utils/utils.js'
 //import sha3 from 'web3/lib/utils/sha3.js'
@@ -54,16 +55,8 @@ export function signOrder(web3, exchangeAddress, creatorAddress, tokenGet, amoun
 
 export function sign0xOrder(web3, exchangeAddress, orderAddresses, orderValues) {
 
-    let values = [exchangeAddress, orderAddresses[0], orderAddresses[1], orderAddresses[2], orderAddresses[3], orderAddresses[4],
-      orderValues[0], orderValues[1], orderValues[2], orderValues[3], orderValues[4], orderValues[5]
-    ];
-
-    let types = ["address", "address", "address", "address", "address", "address",
-      "uint256", "uint256", "uint256", "uint256", "uint256", "uint256"
-    ];
-
-  const hash = `0x${ethAbi.soliditySHA3(types, values).toString('hex')}`;
-
+  const hash = web3Util.soliditySha3(exchangeAddress, orderAddresses[0], orderAddresses[1], orderAddresses[2], orderAddresses[3], orderAddresses[4],
+    orderValues[0], orderValues[1], orderValues[2], orderValues[3], orderValues[4], orderValues[5]);
   let sigResult = web3.eth.sign(orderAddresses[0], hash);
   let sig = ethUtil.fromRpcSig(sigResult);
   sig.r = `0x${sig.r.toString('hex')}`;
@@ -72,6 +65,18 @@ export function sign0xOrder(web3, exchangeAddress, orderAddresses, orderValues) 
   return sig;
 }
 
+
+//for bancor api orders https://support.bancor.network/hc/en-us/articles/360001455772-Build-a-transaction-using-the-Convert-API
+export function signBancor(web3, signer, path, converter, amount, block, gasprice, user) {
+
+  const hash = web3Util.soliditySha3(block, gasprice, user, converter, amount, { type: "address[]", value: path });
+  let sigResult = web3.eth.sign(signer, hash);
+  let sig = ethUtil.fromRpcSig(sigResult);
+  sig.r = `0x${sig.r.toString('hex')}`;
+  sig.s = `0x${sig.s.toString('hex')}`;
+  sig.hash = hash;
+  return sig;
+}
 
 /*
 export function getRandomInt (min, max) {
