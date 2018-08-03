@@ -57,9 +57,26 @@ contract BancorNetwork {
 }
 
 contract AirSwap {
-   function fill(address makerAddress, uint makerAmount, address makerToken,
-                  address takerAddress, uint takerAmount, address takerToken,
-                  uint256 expiration, uint256 nonce, uint8 v, bytes32 r, bytes32 s) payable {}
+  function fill(address makerAddress, uint makerAmount, address makerToken,
+    address takerAddress, uint takerAmount, address takerToken, uint256 expiration, uint256 nonce, uint8 v, bytes32 r, bytes32 s) payable {}
+}
+
+contract Kyber {
+    
+  function trade(
+    address src,
+    uint256 srcAmount,
+    address dest,
+    address destAddress,
+    uint256 maxDestAmount,
+    uint256 minConversionRate,
+    address walletId)
+    public
+    payable
+    returns(uint) {}
+        
+  function swapTokenToEther(address token, uint256 srcAmount, uint256 minConversionRate) public returns(uint) {}
+  function swapEtherToToken(address token, uint256 minConversionRate) public payable returns(uint) {}
 }
 
 contract InstantTrade is SafeMath, Ownable {
@@ -70,16 +87,18 @@ contract InstantTrade is SafeMath, Ownable {
   address public proxyZeroX;
   address public bancorNetwork;
   address public airSwap;
+  address public kyber;
     
   mapping(address => bool) allowedFallbacks; // Limit fallback to avoid accidental ETH transfers
     
-  constructor(address _weth, address _zeroX, address _bancorNet, address _bancorEther, address _airSwap) Ownable() public {
+  constructor(address _weth, address _zeroX, address _bancorNet, address _bancorEther, address _airSwap, address _kyber) Ownable() public {
     wETH = _weth;
     zeroX = _zeroX;
     proxyZeroX = ZeroExchange(zeroX).TOKEN_TRANSFER_PROXY_CONTRACT();
     etherToken = _bancorEther;
     bancorNetwork = _bancorNet;
     airSwap = _airSwap;
+    kyber = _kyber;
     
     allowedFallbacks[wETH] = true;
     allowedFallbacks[etherToken] = true;
@@ -97,6 +116,7 @@ contract InstantTrade is SafeMath, Ownable {
   
   
   // End to end trading in a single call (Token Store, EtherDelta)
+  // Approve 100.04% _amountGet tokens or send 100.04% _amountGet ETH
   function instantTrade(address _tokenGet, uint _amountGet, address _tokenGive, uint _amountGive,
     uint _expires, uint _nonce, address _user, uint8 _v, bytes32 _r, bytes32 _s, uint _amount, address _store) external payable {
     
@@ -159,6 +179,7 @@ contract InstantTrade is SafeMath, Ownable {
   
   
   // End to end trading in a single call (0x with open orderbook and 0 ZRX fees)
+  // Approve 100.04% _amount tokens or send 100.04% _amount ETH
   function instantTrade0x(address[5] _orderAddresses, uint[6] _orderValues, uint8 _v, bytes32 _r, bytes32 _s, uint _amount) external payable {
             
     // require an undefined taker and 0 makerFee, 0 takerFee
@@ -217,6 +238,7 @@ contract InstantTrade is SafeMath, Ownable {
   
 
    // End to end trading in a single call through the bancorNetwork contract
+   // Approve 100.04% _sourceAmount tokens or send 100.04% _sourceAmount ETH
   function instantTradeBancor(address[] _path, uint _sourceAmount, uint256 _minReturn) external payable {
     
     // Fix max fee (0.4%) and always reserve it
@@ -249,6 +271,7 @@ contract InstantTrade is SafeMath, Ownable {
   }
   
   // End to end trading in a single call, using a Bancor prioritized trade (API approved) on a BancorConverter 
+  // Approve 100.04% _sourceAmount tokens or send 100.04% _sourceAmount ETH
   // https://support.bancor.network/hc/en-us/articles/360001455772-Build-a-transaction-using-the-Convert-API
   function instantTradeBancorPrioritized(address _converter, address[] _path, uint _sourceAmount, uint256 _minReturn, uint256 _block, uint8 _v, bytes32 _r, bytes32 _s) external payable {
     
@@ -299,6 +322,7 @@ contract InstantTrade is SafeMath, Ownable {
   
   
   // End to end trading in a single call, using AirSwap. Request order from a maker using the API
+  // Approve 100.04% _takerAmount tokens or send 100.04% _takerAmount ETH
    function instantTradeAirSwap(address _makerAddress, uint _makerAmount, address _makerToken,
      address _takerAddress, uint _takerAmount, address _takerToken, uint256 _expiration, uint256 _nonce, uint8 _v, bytes32 _r, bytes32 _s) external payable {
     
@@ -347,7 +371,56 @@ contract InstantTrade is SafeMath, Ownable {
     }
   }
   
+
+   // End to end trading in a single call, using Kyber.
+   // Approve 100.04% _srcAmount tokens or send 100.04% _srcAmount ETH
+  function instantTradeKyber(address _srcToken, uint256 _srcAmount, address _destToken, uint256 _maxDestAmount, uint _minConversionRate) external payable {
+    
+    // Fix max fee (0.4%) and always reserve it
+    uint totalValue = safeMul(_srcAmount, 1004) / 1000;
+    uint customerValue;
+    Token token;
+
+    // Paying with Ethereum or token? Deposit to the actual store
+    if (_srcToken == address(0)) {
+
+      // Check amount of ether sent to make sure it's correct
+      require(msg.value == totalValue);
   
+      token = Token(_destToken);
+      totalValue = token.balanceOf(address(this)); // save balance, reuse totalValue for gas savings
+      
+      // Trade
+      customerValue = Kyber(kyber).trade.value(_srcAmount)(address(0x00eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee), _srcAmount, _destToken, address(this), _maxDestAmount, _minConversionRate, 0);
+  
+      //did we receive the right amount of tokens?
+      require(safeAdd(totalValue, customerValue) == token.balanceOf(address(this)));
+   
+      //send tokens to user
+      token.transfer(msg.sender, customerValue);
+   
+    } else {
+
+      // Make sure not to accept ETH when selling tokens
+      require(msg.value == 0 && _destToken == address(0));
+  
+      token = Token(_srcToken);
+      // Assuming user already approved transfer, transfer to this contract
+      require(token.transferFrom(msg.sender, this, totalValue));
+      require(token.approve(kyber, _srcAmount)); 
+  
+      totalValue = address(this).balance; // save balance, reuse totalValue for gas savings
+  
+      // Trade
+      customerValue = Kyber(kyber).trade(_srcToken, _srcAmount, address(0x00eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee), address(this), _maxDestAmount, _minConversionRate, 0);
+  
+      //did we receive the right amount of ETH?
+      require(safeAdd(totalValue, customerValue) == address(this).balance);
+  
+      //send ETH to user
+      msg.sender.transfer(customerValue);    
+    }
+  }
   
   // Withdraw funds earned from fees
   function withdrawFees(address _token) external onlyOwner {

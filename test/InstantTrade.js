@@ -114,7 +114,7 @@ contract("InstantTrade", function (accounts) {
     }
 
 
-    instantTrade = await InstantTrade.new(wETH.address, zeroX.address, bancorNetwork.address, etherToken.address, airSwap.address, { from: feeAccount });
+    instantTrade = await InstantTrade.new(wETH.address, zeroX.address, bancorNetwork.address, etherToken.address, airSwap.address, /*ignore kyber for now*/ zeroAddress, { from: feeAccount });
     await instantTrade.allowFallback(tokenStore.address, true, { from: feeAccount });
     await instantTrade.allowFallback(etherDelta.address, true, { from: feeAccount });
 
