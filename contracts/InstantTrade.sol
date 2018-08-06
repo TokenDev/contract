@@ -54,22 +54,12 @@ contract AirSwap {
     address takerAddress, uint takerAmount, address takerToken, uint256 expiration, uint256 nonce, uint8 v, bytes32 r, bytes32 s) payable {}
 }
 
-contract Kyber {
-    
-  function trade(
-    address src,
-    uint256 srcAmount,
-    address dest,
-    address destAddress,
-    uint256 maxDestAmount,
-    uint256 minConversionRate,
-    address walletId)
-    public
-    payable
-    returns(uint) {}
-        
-  function swapTokenToEther(address token, uint256 srcAmount, uint256 minConversionRate) public returns(uint) {}
-  function swapEtherToToken(address token, uint256 minConversionRate) public payable returns(uint) {}
+contract Kyber {  
+  function trade(address src, uint256 srcAmount, address dest, address destAddress, uint256 maxDestAmount, uint256 minConversionRate, address walletId) public payable returns(uint);    
+  function swapTokenToEther(address token, uint256 srcAmount, uint256 minConversionRate) public returns(uint);
+  function swapEtherToToken(address token, uint256 minConversionRate) public payable returns(uint);
+  function getUserCapInWei(address user) public view returns(uint);
+  function maxGasPrice() public view returns(uint);
 }
 
 contract InstantTrade is SafeMath, Ownable {
@@ -264,7 +254,6 @@ contract InstantTrade is SafeMath, Ownable {
   }
   
   
-
    // End to end trading in a single call through the bancorNetwork contract
    // Approve 100.04% _sourceAmount tokens or send 100.04% _sourceAmount ETH
   function instantTradeBancor(address[] _path, uint _sourceAmount, uint256 _minReturn) external payable {
@@ -399,7 +388,17 @@ contract InstantTrade is SafeMath, Ownable {
     }
   }
   
+   // Return the maximum gas price allowed for Kyber trades
+  function maxGasPriceKyber() external view returns(uint) {
+    Kyber(kyber).maxGasPrice();
+  }
 
+  // Return the maximum amount of ETH (in wei) in a Kyber trade for this contract
+  function maxWeiKyber() external view returns(uint) {
+    return Kyber(kyber).getUserCapInWei(address(this));
+  }
+  
+  
    /* End to end trading in a single call, using Kyber.
       Approve 100.04% _srcAmount tokens or send 100.04% _srcAmount ETH 
    */
