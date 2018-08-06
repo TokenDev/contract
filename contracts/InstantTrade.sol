@@ -26,7 +26,8 @@ contract BancorConverter {
 contract BancorNetwork {
   bytes32 public constant BANCOR_GAS_PRICE_LIMIT = "BancorGasPriceLimit"; // inherited from ContractIds
   address public registry;
-    
+  
+  function getReturnByPath(address[] _path, uint256 _amount) public view returns (uint256);
   function convert(address[] _path, uint256 _amount, uint256 _minReturn) public payable returns (uint256);
   function convertFor(address[] _path, uint256 _amount, uint256 _minReturn, address _for) public payable returns (uint256);
   function convertForPrioritized2(
@@ -237,13 +238,17 @@ contract InstantTrade is SafeMath, Ownable {
   
   
   // Return the maximum gas price allowed for non-prioritized Bancor
-  function maxGasPriceBancor() external view returns(uint) {
+  function maxGasPriceBancor() external view returns(uint256) {
     BancorNetwork bancor = BancorNetwork(bancorNetwork);
     BancorRegistry registry = BancorRegistry(bancor.registry());
     address limitAddress = registry.addressOf(bancor.BANCOR_GAS_PRICE_LIMIT());
     return BancorGasPriceLimit(limitAddress).gasPrice();
   }
   
+  // Return the expected amount of tokens returned by Bancor
+  function expectedReturnBancor(address[] _path, uint _sourceAmount) external view returns(uint256) {
+    return BancorNetwork(bancorNetwork).getReturnByPath(_path, _sourceAmount);
+  }
   
 
    // End to end trading in a single call through the bancorNetwork contract

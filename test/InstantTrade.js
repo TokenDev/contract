@@ -346,7 +346,7 @@ contract("InstantTrade", function (accounts) {
     let prevTokenBalance = await token.balanceOf(taker);
 
 
-    let expectedReturn = await bancorNetwork.getReturnByPath(tradePath, sourceAmount);
+    let expectedReturn = await instantTrade.expectedReturnBancor(tradePath, sourceAmount);
 
     let maxGas = await instantTrade.maxGasPriceBancor();
     assert.equal(maxGas.toString(), gasPrice.toString(), 'max gas reads correctly');
@@ -378,7 +378,7 @@ contract("InstantTrade", function (accounts) {
     // simulate signed order from API, with instant trade contract as taker
     let order = signBancor(maxBlock, gasPrice, instantTrade.address, converter.address, sourceAmount, tradePath);
 
-    expectedReturn = await bancorNetwork.getReturnByPath(tradePath, sourceAmount);
+    expectedReturn = await instantTrade.expectedReturnBancor(tradePath, sourceAmount);
     prevBalance = await web3.eth.getBalance(taker);
     prevInstantBalance = await web3.eth.getBalance(instantTrade.address);
     prevTokenBalance = await token.balanceOf(taker);
@@ -405,7 +405,7 @@ contract("InstantTrade", function (accounts) {
     let minReturn = 1;
     let tradePath = [token.address, smartToken.address, etherToken.address];
 
-    let expectedReturn = await bancorNetwork.getReturnByPath(tradePath, sourceAmount);
+    let expectedReturn = await instantTrade.expectedReturnBancor(tradePath, sourceAmount);
 
     let maxGas = await instantTrade.maxGasPriceBancor();
     assert.equal(maxGas.toString(), gasPrice.toString(), 'max gas reads correctly');
@@ -446,7 +446,7 @@ contract("InstantTrade", function (accounts) {
     // simulate signed order from API, with instant trade contract as taker
     let order = signBancor(maxBlock, gasPrice, instantTrade.address, converter.address, sourceAmount, tradePath);
 
-    expectedReturn = await bancorNetwork.getReturnByPath(tradePath, sourceAmount);
+    expectedReturn = await instantTrade.expectedReturnBancor(tradePath, sourceAmount);
 
     await token.approve(instantTrade.address, sourceAmountFee, { from: taker });
 
