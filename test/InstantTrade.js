@@ -348,6 +348,9 @@ contract("InstantTrade", function (accounts) {
 
     let expectedReturn = await bancorNetwork.getReturnByPath(tradePath, sourceAmount);
 
+    let maxGas = await instantTrade.maxGasPriceBancor();
+    assert.equal(maxGas.toString(), gasPrice.toString(), 'max gas reads correctly');
+
     /* How to perform the same trade through the converter or network itself 
       let trade = await converter.quickConvert(tradePath, sourceAmount, minReturn, { from: taker, value: sourceAmount });
       let trade = await bancorNetwork.convertFor(tradePath, sourceAmount, minReturn, taker, { from:taker, value: sourceAmount });
@@ -403,6 +406,9 @@ contract("InstantTrade", function (accounts) {
     let tradePath = [token.address, smartToken.address, etherToken.address];
 
     let expectedReturn = await bancorNetwork.getReturnByPath(tradePath, sourceAmount);
+
+    let maxGas = await instantTrade.maxGasPriceBancor();
+    assert.equal(maxGas.toString(), gasPrice.toString(), 'max gas reads correctly');
 
     /* How to perform the same trade through the converter or network itself 
 

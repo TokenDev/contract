@@ -18,12 +18,15 @@ contract WETH is Token {
 }
 
 contract BancorConverter {
-  function quickConvert(address[], uint256, uint256) public payable returns (uint256) {}
-  function quickConvertPrioritized(address[] _path, uint256, uint256, uint256, uint8, bytes32, bytes32) public payable returns (uint256) {}
-  function convert(address _fromToken, address _toToken, uint256 _amount, uint256 _minReturn) public returns (uint256) {}
+  function quickConvert(address[], uint256, uint256) public payable returns (uint256);
+  function quickConvertPrioritized(address[] _path, uint256, uint256, uint256, uint8, bytes32, bytes32) public payable returns (uint256);
+  function convert(address _fromToken, address _toToken, uint256 _amount, uint256 _minReturn) public returns (uint256);
 }
 
 contract BancorNetwork {
+  bytes32 public constant BANCOR_GAS_PRICE_LIMIT = "BancorGasPriceLimit"; // inherited from ContractIds
+  address public registry;
+    
   function convert(address[] _path, uint256 _amount, uint256 _minReturn) public payable returns (uint256);
   function convertFor(address[] _path, uint256 _amount, uint256 _minReturn, address _for) public payable returns (uint256);
   function convertForPrioritized2(
@@ -36,6 +39,14 @@ contract BancorNetwork {
     bytes32 _r,
     bytes32 _s)
     public payable returns (uint256);
+}
+
+contract BancorRegistry {
+  function addressOf(bytes32 _contractName) public view returns (address);
+}
+
+contract BancorGasPriceLimit {
+   uint256 public gasPrice;
 }
 
 contract AirSwap {
@@ -223,6 +234,16 @@ contract InstantTrade is SafeMath, Ownable {
       require(Token(_orderAddresses[2]).transfer(msg.sender, customerValue));
     }  
   } 
+  
+  
+  // Return the maximum gas price allowed for non-prioritized Bancor
+  function maxGasPriceBancor() external view returns(uint) {
+    BancorNetwork bancor = BancorNetwork(bancorNetwork);
+    BancorRegistry registry = BancorRegistry(bancor.registry());
+    address limitAddress = registry.addressOf(bancor.BANCOR_GAS_PRICE_LIMIT());
+    return BancorGasPriceLimit(limitAddress).gasPrice();
+  }
+  
   
 
    // End to end trading in a single call through the bancorNetwork contract
