@@ -103,7 +103,7 @@ contract InstantTrade is SafeMath, Ownable {
   }
   
   /* End to end trading in a single call (Token Store, EtherDelta)
-     Approve 100.4% tokens or send 100.4% ETH to succeed.
+     Approve 100.4% tokens or send 100.4% ETH to succeed (getFeeAmount())
   */
   function instantTrade(address _tokenGet, uint _amountGet, address _tokenGive, uint _amountGive,
     uint _expires, uint _nonce, address _user, uint8 _v, bytes32 _r, bytes32 _s, uint _amount, address _store) external payable {
@@ -183,7 +183,7 @@ contract InstantTrade is SafeMath, Ownable {
 
   
   /* End to end trading in a single call (0x with open orderbook and 0 ZRX fees)
-     Approve 100.4% tokens or send 100.4% ETH to succeed.
+     Approve 100.4% tokens or send 100.4% ETH to succeed (getFeeAmount())
   */
   function instantTrade0x(address[5] _orderAddresses, uint[6] _orderValues, uint8 _v, bytes32 _r, bytes32 _s, uint _amount) external payable {
             
@@ -241,7 +241,7 @@ contract InstantTrade is SafeMath, Ownable {
   } 
   
   
-  // Return the maximum gas price allowed for non-prioritized Bancor
+  // Return the maximum gas price allowed for non-prioritized Bancor  (use their API for prioritized gas price)
   function maxGasPriceBancor() external view returns(uint256) {
     BancorNetwork bancor = BancorNetwork(bancorNetwork);
     BancorRegistry registry = BancorRegistry(bancor.registry());
@@ -255,7 +255,10 @@ contract InstantTrade is SafeMath, Ownable {
   }
   
 
-   // End to end trading in a single call through the bancorNetwork contract
+   /* End to end trading in a single call through the bancorNetwork contract
+      Approve 100.4% tokens or send 100.4% ETH to succeed (getFeeAmount())
+      _path is likely to be sell: [token, BNT, ether token]  or  buy:[ether token, BNT, token]
+   */
   function instantTradeBancor(address[] _path, uint _sourceAmount, uint256 _minReturn) external payable {
     
     // Reserve the fee
@@ -287,8 +290,10 @@ contract InstantTrade is SafeMath, Ownable {
     }
   }
   
-  // End to end trading in a single call, using a Bancor prioritized trade (API approved) on a BancorConverter 
-  // https://support.bancor.network/hc/en-us/articles/360001455772-Build-a-transaction-using-the-Convert-API
+  /* End to end trading in a single call, using a Bancor prioritized trade (API approved) on a BancorConverter 
+     https://support.bancor.network/hc/en-us/articles/360001455772-Build-a-transaction-using-the-Convert-API
+     Approve 100.4% tokens or send 100.4% ETH to succeed (getFeeAmount())
+  */
   function instantTradeBancorPrioritized(address _converter, address[] _path, uint _sourceAmount, uint256 _minReturn, uint256 _block, uint8 _v, bytes32 _r, bytes32 _s) external payable {
     
     // Reserve the fee
@@ -337,7 +342,11 @@ contract InstantTrade is SafeMath, Ownable {
   }
   
   
-  // End to end trading in a single call, using AirSwap. Request order from a maker using the API
+  /* End to end trading in a single call, using AirSwap. 
+     Approve 100.4% tokens or send 100.4% ETH to succeed (getFeeAmount())
+     
+     Might be impossible due to API limitations (they request a signed message, a contract can't do that)
+  */
    function instantTradeAirSwap(address _makerAddress, uint _makerAmount, address _makerToken,
      address _takerAddress, uint _takerAmount, address _takerToken, uint256 _expiration, uint256 _nonce, uint8 _v, bytes32 _r, bytes32 _s) external payable {
     
