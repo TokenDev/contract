@@ -259,7 +259,7 @@ contract InstantTrade is SafeMath, Ownable {
   function instantTradeBancor(address[] _path, uint _sourceAmount, uint256 _minReturn) external payable {
     
     // Reserve the fee
-    uint totalValue = safeMul(_sourceAmount, fee) / 1000;
+    uint totalValue = getFeeAmount(_sourceAmount);
     uint customerValue;
     
     // Paying with Ethereum or token? 
@@ -292,7 +292,7 @@ contract InstantTrade is SafeMath, Ownable {
   function instantTradeBancorPrioritized(address _converter, address[] _path, uint _sourceAmount, uint256 _minReturn, uint256 _block, uint8 _v, bytes32 _r, bytes32 _s) external payable {
     
     // Reserve the fee
-    uint totalValue = safeMul(_sourceAmount, fee) / 1000;
+    uint totalValue = getFeeAmount(_sourceAmount);
     uint customerValue;
     Token token;
     
@@ -342,7 +342,7 @@ contract InstantTrade is SafeMath, Ownable {
      address _takerAddress, uint _takerAmount, address _takerToken, uint256 _expiration, uint256 _nonce, uint8 _v, bytes32 _r, bytes32 _s) external payable {
     
     // Reserve the fee
-    uint totalValue = safeMul(_takerAmount, fee) / 1000;
+    uint totalValue = getFeeAmount(_takerAmount);
     
     
     // Paying with Ethereum or token? Deposit to the actual store
