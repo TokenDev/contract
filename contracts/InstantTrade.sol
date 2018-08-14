@@ -26,7 +26,8 @@ contract BancorConverter {
 contract BancorNetwork {
   bytes32 public constant BANCOR_GAS_PRICE_LIMIT = "BancorGasPriceLimit"; // inherited from ContractIds
   address public registry;
-    
+  
+  function getReturnByPath(address[] _path, uint256 _amount) public view returns (uint256);
   function convert(address[] _path, uint256 _amount, uint256 _minReturn) public payable returns (uint256);
   function convertFor(address[] _path, uint256 _amount, uint256 _minReturn, address _for) public payable returns (uint256);
   function convertForPrioritized2(
@@ -62,6 +63,12 @@ contract Kyber {
   function maxGasPrice() public view returns(uint);
 }
 
+
+
+
+
+
+
 contract InstantTrade is SafeMath, Ownable {
 
   address public wETH;
@@ -89,6 +96,7 @@ contract InstantTrade is SafeMath, Ownable {
     allowedFallbacks[etherToken] = true;
   }
    
+   
   // Only allow incoming ETH from known contracts (Exchange and WETH withdrawals)
   function() public payable {
     require(allowedFallbacks[msg.sender]);
@@ -99,6 +107,12 @@ contract InstantTrade is SafeMath, Ownable {
     allowedFallbacks[_contract] = _allowed;
   }
   
+  
+  // Return the amount required to send or approve, including the fee. (in tokenGet, takerToken)
+  function getFeeAmount(uint _amount) public view returns(uint) {
+    return safeMul(_amount, fee) / 1000;
+  }
+  
 
   // Return the remaining volume of a Token Store order in tokenGet
   function availableVolume(address _tokenGet, uint _amountGet, address _tokenGive, uint _amountGive,
@@ -107,14 +121,15 @@ contract InstantTrade is SafeMath, Ownable {
     return TokenStore(_store).availableVolume(_tokenGet, _amountGet, _tokenGive, _amountGive,_expires, _nonce, _user, _v, _r, _s);
   }
   
+  
   /* End to end trading in a single call (Token Store, EtherDelta)
-     Approve 100.4% tokens or send 100.4% ETH to succeed.
+     Approve 100.4% tokens or send 100.4% ETH to succeed (getFeeAmount())
   */
   function instantTrade(address _tokenGet, uint _amountGet, address _tokenGive, uint _amountGive,
     uint _expires, uint _nonce, address _user, uint8 _v, bytes32 _r, bytes32 _s, uint _amount, address _store) external payable {
     
     // Reserve the fee
-    uint totalValue = safeMul(_amount, fee) / 1000;
+    uint totalValue = getFeeAmount(_amount);
     
     // Paying with ETH or token? Deposit to the actual store
     if (_tokenGet == address(0)) {
@@ -187,7 +202,7 @@ contract InstantTrade is SafeMath, Ownable {
 
   
   /* End to end trading in a single call (0x with open orderbook and 0 ZRX fees)
-     Approve 100.4% tokens or send 100.4% ETH to succeed.
+     Approve 100.4% tokens or send 100.4% ETH to succeed (getFeeAmount())
   */
   function instantTrade0x(address[5] _orderAddresses, uint[6] _orderValues, uint8 _v, bytes32 _r, bytes32 _s, uint _amount) external payable {
             
@@ -201,7 +216,7 @@ contract InstantTrade is SafeMath, Ownable {
     WETH wToken = WETH(wETH);
     
     // Reserve the fee
-    uint totalValue = safeMul(_amount, fee) / 1000;
+    uint totalValue = getFeeAmount(_amount);
     
     // Paying with W-ETH or token? 
     if (/*takerToken*/ _orderAddresses[3] == wETH) {
@@ -245,21 +260,28 @@ contract InstantTrade is SafeMath, Ownable {
   } 
   
   
-  // Return the maximum gas price allowed for non-prioritized Bancor
-  function maxGasPriceBancor() external view returns(uint) {
+  // Return the maximum gas price allowed for non-prioritized Bancor  (use their API for prioritized gas price)
+  function maxGasPriceBancor() external view returns(uint256) {
     BancorNetwork bancor = BancorNetwork(bancorNetwork);
     BancorRegistry registry = BancorRegistry(bancor.registry());
     address limitAddress = registry.addressOf(bancor.BANCOR_GAS_PRICE_LIMIT());
     return BancorGasPriceLimit(limitAddress).gasPrice();
   }
   
+  // Return the expected amount of tokens returned by Bancor
+  function expectedReturnBancor(address[] _path, uint _sourceAmount) external view returns(uint256) {
+    return BancorNetwork(bancorNetwork).getReturnByPath(_path, _sourceAmount);
+  }
   
-   // End to end trading in a single call through the bancorNetwork contract
-   // Approve 100.04% _sourceAmount tokens or send 100.04% _sourceAmount ETH
+  
+  /* End to end trading in a single call through the bancorNetwork contract
+     Approve 100.4% tokens or send 100.4% ETH to succeed (getFeeAmount())
+     _path is likely to be sell: [token, BNT, ether token]  or  buy:[ether token, BNT, token]
+  */
   function instantTradeBancor(address[] _path, uint _sourceAmount, uint256 _minReturn) external payable {
     
     // Reserve the fee
-    uint totalValue = safeMul(_sourceAmount, fee) / 1000;
+    uint totalValue = getFeeAmount(_sourceAmount);
     uint customerValue;
     
     // Paying with Ethereum or token? 
@@ -287,13 +309,14 @@ contract InstantTrade is SafeMath, Ownable {
     }
   }
   
-  // End to end trading in a single call, using a Bancor prioritized trade (API approved) on a BancorConverter 
-  // Approve 100.04% _sourceAmount tokens or send 100.04% _sourceAmount ETH
-  // https://support.bancor.network/hc/en-us/articles/360001455772-Build-a-transaction-using-the-Convert-API
+  /* End to end trading in a single call, using a Bancor prioritized trade (API approved) on a BancorConverter 
+     https://support.bancor.network/hc/en-us/articles/360001455772-Build-a-transaction-using-the-Convert-API
+     Approve 100.4% tokens or send 100.4% ETH to succeed (getFeeAmount())
+  */
   function instantTradeBancorPrioritized(address _converter, address[] _path, uint _sourceAmount, uint256 _minReturn, uint256 _block, uint8 _v, bytes32 _r, bytes32 _s) external payable {
     
     // Reserve the fee
-    uint totalValue = safeMul(_sourceAmount, fee) / 1000;
+    uint totalValue = getFeeAmount(_sourceAmount);
     uint customerValue;
     Token token;
     
@@ -338,13 +361,16 @@ contract InstantTrade is SafeMath, Ownable {
   }
   
   
-  // End to end trading in a single call, using AirSwap. Request order from a maker using the API
-  // Approve 100.04% _takerAmount tokens or send 100.04% _takerAmount ETH
+   /* End to end trading in a single call, using AirSwap. 
+     Approve 100.4% tokens or send 100.4% ETH to succeed (getFeeAmount())
+     
+     Might be impossible due to API limitations (they request a signed message, a contract can't do that)
+   */
    function instantTradeAirSwap(address _makerAddress, uint _makerAmount, address _makerToken,
      address _takerAddress, uint _takerAmount, address _takerToken, uint256 _expiration, uint256 _nonce, uint8 _v, bytes32 _r, bytes32 _s) external payable {
     
     // Reserve the fee
-    uint totalValue = safeMul(_takerAmount, fee) / 1000;
+    uint totalValue = getFeeAmount(_takerAmount);
     
     
     // Paying with Ethereum or token? Deposit to the actual store
@@ -388,7 +414,7 @@ contract InstantTrade is SafeMath, Ownable {
     }
   }
   
-   // Return the maximum gas price allowed for Kyber trades
+  // Return the maximum gas price allowed for Kyber trades
   function maxGasPriceKyber() external view returns(uint) {
     Kyber(kyber).maxGasPrice();
   }
@@ -399,13 +425,13 @@ contract InstantTrade is SafeMath, Ownable {
   }
   
   
-   /* End to end trading in a single call, using Kyber.
-      Approve 100.04% _srcAmount tokens or send 100.04% _srcAmount ETH 
-   */
+  /* End to end trading in a single call, using Kyber. 
+     Approve 100.4% tokens or send 100.4% ETH to succeed (getFeeAmount())
+  */
   function instantTradeKyber(address _srcToken, uint256 _srcAmount, address _destToken, uint256 _maxDestAmount, uint _minConversionRate) external payable {
     
     // Reserve the fee
-    uint totalValue = safeMul(_srcAmount, fee) / 1000;
+    uint totalValue = getFeeAmount(_srcAmount);
     uint customerValue;
     Token token;
 

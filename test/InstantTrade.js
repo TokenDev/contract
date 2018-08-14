@@ -164,7 +164,10 @@ contract("InstantTrade", function (accounts) {
     assert.equal(String(unfilled), String(amountGet), "Order is available");
 
 
-    let amountFee = (amountGet * 1.004); //add 0.4%
+    let amountFee = await instantTrade.getFeeAmount(amountGet); //add 0.4%
+    let amountFee2 = web3.toBigNumber(amountGet).times(1004).div(1000); 
+
+    assert.equal(amountFee.toString(), amountFee2.toString(), 'getFeeAmount return value is correct');
 
     await token.approve(instantTrade.address, amountFee, { from: taker });
 
@@ -210,7 +213,7 @@ contract("InstantTrade", function (accounts) {
     let etherBalance = await web3.eth.getBalance(taker);
     let tokenBalance = await token.balanceOf(taker);
 
-    let amountFee = (amountGet * 1.004); //add 0.4%
+    let amountFee = await instantTrade.getFeeAmount(amountGet); //add 0.4%
 
     let trade = await instantTrade.instantTrade(tokenGet, amountGet, tokenGive, amountGive, expires, nonce, maker, order.v, order.r, order.s, amountGet, exchangeAddress, { from: taker, value: amountFee });
     let gas = trade.receipt.gasUsed * gasPrice;
@@ -264,7 +267,7 @@ contract("InstantTrade", function (accounts) {
     let allowedMaker = await token.allowance(maker, zeroProxy.address);
     assert.equal(String(allowedMaker), String(orderValues[0]), 'maker allowance');
 
-    let amountFee = (orderValues[1] * 1.004); //add 0.4%
+    let amountFee = await instantTrade.getFeeAmount(orderValues[1]); //add 0.4%
 
     let trade = await instantTrade.instantTrade0x(orderAddresses, orderValues, order.v, order.r, order.s, orderValues[1], { from: taker, value: amountFee });
     let gas = trade.receipt.gasUsed * gasPrice;
@@ -309,7 +312,9 @@ contract("InstantTrade", function (accounts) {
     let unfilled = await instantTrade.availableVolume0x(orderAddresses, orderValues, order.v, order.r, order.s);
     assert.equal(String(unfilled), String(orderValues[1]), "Order is available");
 
-    let amountFee = (orderValues[1] * 1.004); //add 0.4%
+
+    let amountFee = await instantTrade.getFeeAmount(orderValues[1]); //add 0.4%
+
     await token.approve(instantTrade.address, amountFee, { from: taker });
 
     let etherBalance = await web3.eth.getBalance(taker);
@@ -346,7 +351,7 @@ contract("InstantTrade", function (accounts) {
     let prevTokenBalance = await token.balanceOf(taker);
 
 
-    let expectedReturn = await bancorNetwork.getReturnByPath(tradePath, sourceAmount);
+    let expectedReturn = await instantTrade.expectedReturnBancor(tradePath, sourceAmount);
 
     let maxGas = await instantTrade.maxGasPriceBancor();
     assert.equal(maxGas.toString(), gasPrice.toString(), 'max gas reads correctly');
@@ -378,7 +383,7 @@ contract("InstantTrade", function (accounts) {
     // simulate signed order from API, with instant trade contract as taker
     let order = signBancor(maxBlock, gasPrice, instantTrade.address, converter.address, sourceAmount, tradePath);
 
-    expectedReturn = await bancorNetwork.getReturnByPath(tradePath, sourceAmount);
+    expectedReturn = await instantTrade.expectedReturnBancor(tradePath, sourceAmount);
     prevBalance = await web3.eth.getBalance(taker);
     prevInstantBalance = await web3.eth.getBalance(instantTrade.address);
     prevTokenBalance = await token.balanceOf(taker);
@@ -405,7 +410,7 @@ contract("InstantTrade", function (accounts) {
     let minReturn = 1;
     let tradePath = [token.address, smartToken.address, etherToken.address];
 
-    let expectedReturn = await bancorNetwork.getReturnByPath(tradePath, sourceAmount);
+    let expectedReturn = await instantTrade.expectedReturnBancor(tradePath, sourceAmount);
 
     let maxGas = await instantTrade.maxGasPriceBancor();
     assert.equal(maxGas.toString(), gasPrice.toString(), 'max gas reads correctly');
@@ -446,7 +451,7 @@ contract("InstantTrade", function (accounts) {
     // simulate signed order from API, with instant trade contract as taker
     let order = signBancor(maxBlock, gasPrice, instantTrade.address, converter.address, sourceAmount, tradePath);
 
-    expectedReturn = await bancorNetwork.getReturnByPath(tradePath, sourceAmount);
+    expectedReturn = await instantTrade.expectedReturnBancor(tradePath, sourceAmount);
 
     await token.approve(instantTrade.address, sourceAmountFee, { from: taker });
 
@@ -497,7 +502,7 @@ contract("InstantTrade", function (accounts) {
     let allowedMaker = await token.allowance(maker, airSwap.address);
     assert.equal(String(allowedMaker), String(makerAmount), 'maker allowance');
 
-    let amountFee = (takerAmount * 1.004); //add 0.4%
+    let amountFee = await instantTrade.getFeeAmount(takerAmount); //add 0.4%
 
     let trade = await instantTrade.instantTradeAirSwap(maker, makerAmount, makerToken, contractTaker, takerAmount, takerToken, expiration, nonce, order.v, order.r, order.s, { from: taker, value: amountFee });
 
@@ -529,7 +534,7 @@ contract("InstantTrade", function (accounts) {
     assert(!Filled, "new order isnt filled");
 
 
-    let amountFee = (takerAmount * 1.004); //add 0.4%
+    let amountFee = await instantTrade.getFeeAmount(takerAmount); //add 0.4%
     await token.approve(instantTrade.address, amountFee, { from: taker });
 
     let etherBalance = await web3.eth.getBalance(taker);
